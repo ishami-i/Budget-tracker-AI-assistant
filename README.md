@@ -123,5 +123,14 @@ Pull requests are welcome! For major changes, please open an issue first to disc
 ---
 
 ## 📄 License
-MIT License (or the one your team prefers)
+Budget Tracker AI Assistant
+Copyright © 2025 [Your Team Name]
+
+All rights reserved.
+
+This project and its source code are proprietary and confidential.
+No part of this project may be copied, modified, merged, published,
+distributed, sublicensed, or sold without the express written permission
+of the copyright holder(s).
+
 
