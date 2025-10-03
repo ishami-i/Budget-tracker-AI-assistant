@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'screens/home_screen.dart';
-import 'screens/income_expense_screen.dart';
+import 'screens/income_screen.dart';
+import 'screens/expense_screen.dart';
 import 'screens/model_screen.dart';
-import 'screens/history_screen.dart';
-import 'screens/settings_screen.dart';
+import 'screens/profile_screen.dart';
 
 void main() {
   runApp(BudgetAssistantApp());
@@ -64,14 +64,20 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _screens = [
-      HomeScreen(),
-      IncomeExpensesScreen(
-        initialTransactions: _allTransactions,
+      HomeScreen(transactions: _allTransactions),
+      IncomeScreen(
+        transactions: _allTransactions,
         onTransactionsUpdated: _updateTransactions,
       ),
-      ModelRecommendationsScreen(), // ModelRecommendationsScreen might need transactions too later
-      HistoryScreen(allTransactions: _allTransactions), // FIX: Pass transactions here
-      SettingsScreen(),
+      ExpenseScreen(
+        transactions: _allTransactions,
+        onTransactionsUpdated: _updateTransactions,
+      ),
+      ModelRecommendationsScreen(transactions: _allTransactions),
+      ProfileScreen(
+        transactions: _allTransactions,
+        onTransactionsUpdated: _updateTransactions,
+      ),
     ];
   }
 
@@ -80,11 +86,20 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void didUpdateWidget(covariant MainScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _screens[1] = IncomeExpensesScreen( // Update IncomeExpensesScreen
-      initialTransactions: _allTransactions,
+    _screens[0] = HomeScreen(transactions: _allTransactions);
+    _screens[1] = IncomeScreen(
+      transactions: _allTransactions,
       onTransactionsUpdated: _updateTransactions,
     );
-    _screens[3] = HistoryScreen(allTransactions: _allTransactions); // Update HistoryScreen
+    _screens[2] = ExpenseScreen(
+      transactions: _allTransactions,
+      onTransactionsUpdated: _updateTransactions,
+    );
+    _screens[3] = ModelRecommendationsScreen(transactions: _allTransactions);
+    _screens[4] = ProfileScreen(
+      transactions: _allTransactions,
+      onTransactionsUpdated: _updateTransactions,
+    );
   }
 
 
@@ -106,10 +121,10 @@ class _MainScreenState extends State<MainScreen> {
         onTap: _onItemTapped,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.add_circle_outline), label: 'Income/Expense'),
+          BottomNavigationBarItem(icon: Icon(Icons.savings), label: 'Income'),
+          BottomNavigationBarItem(icon: Icon(Icons.shopping_cart), label: 'Expense'),
           BottomNavigationBarItem(icon: Icon(Icons.insights), label: 'Model'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
     );

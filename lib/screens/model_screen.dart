@@ -1,13 +1,60 @@
 import 'package:flutter/material.dart';
+import '../services/recommendation_api.dart';
 
-class ModelRecommendationsScreen extends StatelessWidget {
+class ModelRecommendationsScreen extends StatefulWidget {
+  final List<Map<String, dynamic>> transactions;
+  const ModelRecommendationsScreen({super.key, required this.transactions});
+
+  @override
+  State<ModelRecommendationsScreen> createState() => _ModelRecommendationsScreenState();
+}
+
+class _ModelRecommendationsScreenState extends State<ModelRecommendationsScreen> {
   final Color primaryGreen = Color(0xFF63A50D);
   final Color primaryRed = Colors.redAccent;
 
   // Sample Data (would come from your AI model)
-  final double predictedMonthlySpending = 950000;
-  final double currentMonthlyExpenses = 850000; // From your Income/Expenses screen
-  final double monthlyBudget = 1000000; // From user settings/goals
+  late final double predictedMonthlySpending = 950000; // Placeholder until model feedback
+  late double currentMonthlyExpenses = 0;
+  late double monthlyBudget = 0;
+
+  // Backend base URL. For Android emulator use 10.0.2.2, for iOS sim use localhost.
+  static const String apiBaseUrl = 'http://10.0.2.2:8000';
+  late final RecommendationApiService _api = RecommendationApiService(baseUrl: apiBaseUrl);
+
+  bool _loading = false;
+  int? _recommendFlag;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _computeAggregates();
+  }
+
+  void _computeAggregates() {
+    final DateTime now = DateTime.now();
+    double income = 0;
+    double expenses = 0;
+    for (final tx in widget.transactions) {
+      try {
+        final DateTime d = DateTime.parse((tx['date'] ?? '').toString());
+        if (d.year == now.year && d.month == now.month) {
+          final String type = (tx['type'] ?? '').toString();
+          final double amount = (tx['amount'] as num).toDouble();
+          if (type == 'Income') {
+            income += amount;
+          } else if (type.startsWith('Expense')) {
+            expenses += amount;
+          }
+        }
+      } catch (_) {}
+    }
+    setState(() {
+      currentMonthlyExpenses = expenses;
+      monthlyBudget = income; // Treat income as budget
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +114,31 @@ class ModelRecommendationsScreen extends StatelessWidget {
                         Text('Budget: Rwf ${monthlyBudget.toStringAsFixed(0)}', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
                       ],
                     ),
+                    SizedBox(height: 16),
+                    Row(
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _loading ? null : _onGetRecommendation,
+                          style: ElevatedButton.styleFrom(backgroundColor: primaryGreen),
+                          icon: _loading
+                              ? SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : Icon(Icons.insights, color: Colors.white),
+                          label: Text('Get Recommendation', style: TextStyle(color: Colors.white)),
+                        ),
+                        SizedBox(width: 12),
+                        if (_recommendFlag != null)
+                          Chip(
+                            label: Text('Flag: $_recommendFlag'),
+                            backgroundColor: primaryGreen.withOpacity(0.1),
+                            labelStyle: TextStyle(color: primaryGreen, fontWeight: FontWeight.bold),
+                          ),
+                      ],
+                    ),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(_error!, style: TextStyle(color: Colors.red)),
+                      ),
                   ],
                 ),
               ),
@@ -154,6 +226,73 @@ class ModelRecommendationsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _onGetRecommendation() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      // Map real values from transactions. Simple example encoding.
+      final double incomeX = monthlyBudget * 0.7;
+      final double incomeY = monthlyBudget * 0.3;
+      final double totalExpenses = currentMonthlyExpenses;
+      final double expenseRatio = monthlyBudget == 0 ? 0 : (currentMonthlyExpenses / monthlyBudget);
+      final int riskFlag = expenseRatio > 0.8 ? 1 : 0;
+
+      // Last expense as the sample item context
+      Map<String, dynamic>? lastExpense;
+      for (final tx in widget.transactions.reversed) {
+        final String type = (tx['type'] ?? '').toString();
+        if (type.startsWith('Expense')) { lastExpense = tx; break; }
+      }
+      final double expenseAmount = lastExpense != null ? (lastExpense['amount'] as num).toDouble() : 0.0;
+      final String category = (lastExpense != null ? (lastExpense['category'] ?? 'Other') : 'Other').toString();
+      final String priorityFlag = _priorityFlagFromType((lastExpense != null ? (lastExpense['type'] ?? '') : '').toString());
+      final String currency = 'Rwf';
+      final double cutoffRate = 0.1;
+
+      final flag = await _api.getRecommendation(
+        incomeX: incomeX,
+        incomeY: incomeY,
+        expenseAmount: expenseAmount,
+        category: category,
+        priorityFlag: priorityFlag,
+        currency: currency,
+        cutoffRate: cutoffRate,
+        totalExpenses: totalExpenses,
+        expenseRatio: expenseRatio,
+        riskFlag: riskFlag,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _recommendFlag = flag;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Recommendation flag: $flag')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+      });
+    }
+  }
+
+  // Category encoding moved server-side; keeping client simple.
+
+  String _priorityFlagFromType(String type) {
+    if (type == 'Expense_Planned') return 'planned';
+    if (type == 'Expense_Unplanned') return 'unplanned';
+    return 'other';
   }
 
   Widget _buildRecommendationCard(BuildContext context, String title, String description, IconData icon, Color iconColor) {

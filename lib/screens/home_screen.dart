@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 
 class HomeScreen extends StatelessWidget {
+  final List<Map<String, dynamic>> transactions;
+  final String currency;
+
+  HomeScreen({super.key, required this.transactions, this.currency = 'Rwf'});
+
   final Color primaryGreen = Color(0xFF63A50D);
   final Color secondaryGreen = Color(0xFFECFDCC);
   final String userName = "John Doe"; // Replace with actual user name
@@ -9,28 +14,39 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Sample data
-    final double income = 500000;
-    final double plannedBudget = 400000;
-    final double expenses = 350000;
+    // Compute current month income/expenses from transactions
+    final DateTime now = DateTime.now();
+    double income = 0;
+    double expenses = 0;
+    final Map<String, double> categoryTotals = {};
+    for (final tx in transactions) {
+      try {
+        final DateTime d = DateTime.parse(tx['date']);
+        if (d.year == now.year && d.month == now.month) {
+          final String type = (tx['type'] ?? '').toString();
+          final double amount = (tx['amount'] as num).toDouble();
+          if (type == 'Income') {
+            income += amount;
+          } else if (type.startsWith('Expense')) {
+            expenses += amount;
+            final String cat = (tx['category'] ?? 'Other').toString();
+            categoryTotals[cat] = (categoryTotals[cat] ?? 0) + amount;
+          }
+        }
+      } catch (_) {}
+    }
+
+    final double plannedBudget = income; // Treat income as budget
     final double remainingBudget = plannedBudget - expenses;
-    final double overspending = expenses > plannedBudget ? expenses - plannedBudget : 0;
-    final double spendingProgress = expenses / plannedBudget.clamp(1, double.infinity); // Avoid division by zero
+    final double spendingProgress = plannedBudget <= 0 ? 0 : (expenses / plannedBudget).clamp(0.0, 2.0);
+    final double expenseRatio = income <= 0 ? 0 : (expenses / income);
+    final bool isRisky = expenseRatio > 0.8; // Simple risk flag
+    final String riskLabel = isRisky ? 'Risky' : 'Safe';
 
-    // Expenses by category
-    final List<ExpenseCategory> expenseData = [
-      ExpenseCategory('Food', 120000, Colors.orange),
-      ExpenseCategory('Transport', 80000, Colors.blue),
-      ExpenseCategory('Subscriptions', 50000, Colors.red),
-      ExpenseCategory('Others', 100000, Colors.purple),
-    ];
-
-    // Bar chart data
-    final List<BudgetData> barData = [
-      BudgetData('Income', income, primaryGreen),
-      BudgetData('Budget', plannedBudget, secondaryGreen),
-      BudgetData('Expenses', expenses, Colors.red),
-    ];
+    // Expenses by category for pie chart
+    final List<ExpenseCategory> expenseData = categoryTotals.entries
+        .map((e) => ExpenseCategory(e.key, e.value, _colorForCategory(e.key)))
+        .toList();
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -85,7 +101,7 @@ class HomeScreen extends StatelessWidget {
                             radius: 25,
                             backgroundColor: Colors.white, // Placeholder color
                             backgroundImage: NetworkImage(profileImageUrl), // Use NetworkImage or AssetImage
-                            child: profileImageUrl == null || profileImageUrl.isEmpty
+                            child: profileImageUrl.isEmpty
                                 ? Icon(Icons.person, color: primaryGreen, size: 30) // Fallback icon
                                 : null,
                           ),
@@ -119,7 +135,7 @@ class HomeScreen extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text('Income', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-                                  Text('Rwf $income',
+                                  Text('$currency ${income.toStringAsFixed(0)}',
                                       style: TextStyle(
                                           fontSize: 20,
                                           fontWeight: FontWeight.bold,
@@ -135,7 +151,7 @@ class HomeScreen extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text('Expenses', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-                                  Text('Rwf $expenses',
+                                  Text('$currency ${expenses.toStringAsFixed(0)}',
                                       style: TextStyle(
                                           fontSize: 20,
                                           fontWeight: FontWeight.bold,
@@ -151,7 +167,7 @@ class HomeScreen extends StatelessWidget {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text('Remaining Budget', style: TextStyle(fontSize: 16)),
-                              Text('Rwf $remainingBudget',
+                              Text('$currency ${remainingBudget.toStringAsFixed(0)}',
                                   style: TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
@@ -217,15 +233,15 @@ class HomeScreen extends StatelessWidget {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('Spent: Rwf $expenses', style: TextStyle(fontSize: 14)),
-                              Text('Budget: Rwf $plannedBudget', style: TextStyle(fontSize: 14)),
+                              Text('Spent: $currency ${expenses.toStringAsFixed(0)}', style: TextStyle(fontSize: 14)),
+                              Text('Budget: $currency ${plannedBudget.toStringAsFixed(0)}', style: TextStyle(fontSize: 14)),
                             ],
                           ),
-                          if (overspending > 0)
+                          if (spendingProgress > 1)
                             Padding(
                               padding: const EdgeInsets.only(top: 8.0),
                               child: Text(
-                                'You are over budget by Rwf $overspending!',
+                                'You are over budget by $currency ${(expenses - plannedBudget).toStringAsFixed(0)}!',
                                 style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
                               ),
                             ),
@@ -233,7 +249,36 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-                  SizedBox(height: 24),
+                  SizedBox(height: 12),
+
+                  // Expense Ratio & Risk Indicator
+                  Card(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 2,
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Expense Ratio', style: TextStyle(fontSize: 16, color: Colors.grey[700])),
+                              SizedBox(height: 6),
+                              Text('${(expenseRatio * 100).toStringAsFixed(0)}%',
+                                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.grey[800])),
+                            ],
+                          ),
+                          Chip(
+                            label: Text(riskLabel),
+                            backgroundColor: isRisky ? Colors.red.withOpacity(0.1) : primaryGreen.withOpacity(0.1),
+                            labelStyle: TextStyle(color: isRisky ? Colors.red : primaryGreen, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 12),
 
                   // Mini Pie Chart for Expenses
                   Card(
@@ -294,18 +339,20 @@ class HomeScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Top Savings Tips',
+                          Text('Highlights',
                               style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                   color: primaryGreen)),
                           SizedBox(height: 10),
                           _buildRecommendationItem(
-                              'Cut Rwf 10,000 from dining', 'You could save Rwf 120,000 yearly!'),
+                              'You spent ${(expenseRatio * 100).toStringAsFixed(0)}% of income this month.',
+                              isRisky ? 'Spending is high. Consider reducing variable expenses.' : 'Spending is within a safe range.'),
                           _buildRecommendationItem(
-                              'Review unnecessary subscriptions', 'Potentially save Rwf 30,000 monthly.'),
+                              'Top spending category: ${_topCategory(categoryTotals)}', 'Focus on budgeting for this category.'),
                           _buildRecommendationItem(
-                              'Plan groceries for the week', 'Reduce impulse buys and save up to 15%.'),
+                              'Next month projection',
+                              isRisky ? 'Risk: Likely Risky next month.' : 'Risk: Likely Safe next month.'),
                         ],
                       ),
                     ),
@@ -386,6 +433,38 @@ class HomeScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Color _colorForCategory(String category) {
+    switch (category) {
+      case 'Food':
+        return Colors.orange;
+      case 'Transport':
+        return Colors.blue;
+      case 'Subscriptions':
+        return Colors.red;
+      case 'Housing':
+        return Colors.teal;
+      case 'Utilities':
+        return Colors.indigo;
+      case 'Entertainment':
+        return Colors.purple;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _topCategory(Map<String, double> totals) {
+    if (totals.isEmpty) return 'None';
+    String top = totals.keys.first;
+    double maxV = totals[top] ?? 0;
+    totals.forEach((k, v) {
+      if (v > maxV) {
+        top = k;
+        maxV = v;
+      }
+    });
+    return top;
   }
 }
 
