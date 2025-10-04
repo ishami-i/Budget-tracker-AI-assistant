@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../services/recommendation_api.dart';
 
 class ModelRecommendationsScreen extends StatefulWidget {
   final List<Map<String, dynamic>> transactions;
@@ -13,18 +12,8 @@ class _ModelRecommendationsScreenState extends State<ModelRecommendationsScreen>
   final Color primaryGreen = Color(0xFF63A50D);
   final Color primaryRed = Colors.redAccent;
 
-  // Sample Data (would come from your AI model)
-  late final double predictedMonthlySpending = 950000; // Placeholder until model feedback
   late double currentMonthlyExpenses = 0;
   late double monthlyBudget = 0;
-
-  // Backend base URL. For Android emulator use 10.0.2.2, for iOS sim use localhost.
-  static const String apiBaseUrl = 'http://10.0.2.2:8000';
-  late final RecommendationApiService _api = RecommendationApiService(baseUrl: apiBaseUrl);
-
-  bool _loading = false;
-  int? _recommendFlag;
-  String? _error;
 
   @override
   void initState() {
@@ -36,31 +25,41 @@ class _ModelRecommendationsScreenState extends State<ModelRecommendationsScreen>
     final DateTime now = DateTime.now();
     double income = 0;
     double expenses = 0;
+    
     for (final tx in widget.transactions) {
       try {
-        final DateTime d = DateTime.parse((tx['date'] ?? '').toString());
-        if (d.year == now.year && d.month == now.month) {
+        final String dateStr = (tx['date'] ?? '').toString();
+        final DateTime d = DateTime.parse(dateStr);
+        
+        // Include transactions from current year OR recent months
+        final bool isCurrentYear = d.year == now.year;
+        final bool isRecentMonth = d.year == now.year - 1 && d.month >= now.month - 2;
+        final bool isCurrentMonth = d.year == now.year && d.month == now.month;
+        
+        if (isCurrentYear || isRecentMonth || isCurrentMonth) {
           final String type = (tx['type'] ?? '').toString();
           final double amount = (tx['amount'] as num).toDouble();
+          
           if (type == 'Income') {
             income += amount;
           } else if (type.startsWith('Expense')) {
             expenses += amount;
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        // Skip invalid transactions
+      }
     }
+    
     setState(() {
       currentMonthlyExpenses = expenses;
-      monthlyBudget = income; // Treat income as budget
+      monthlyBudget = income > 0 ? income : 1000000; // Default 1M Rwf if no income
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    bool onTrack = predictedMonthlySpending <= monthlyBudget;
-    String statusMessage = onTrack ? 'On Track to Stay Within Budget' : 'Likely to Exceed Budget';
-    Color statusColor = onTrack ? primaryGreen : primaryRed;
+    // Removed unused onTrack variable
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -74,75 +73,168 @@ class _ModelRecommendationsScreenState extends State<ModelRecommendationsScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Predicted Spending Card
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              color: Colors.white,
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Predicted Monthly Spending',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey[800]),
-                    ),
-                    SizedBox(height: 10),
-                    Text(
-                      'Rwf ${predictedMonthlySpending.toStringAsFixed(0)}',
-                      style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: primaryGreen),
-                    ),
-                    SizedBox(height: 5),
-                    Text(
-                      statusMessage,
-                      style: TextStyle(fontSize: 16, color: statusColor, fontWeight: FontWeight.w600),
-                    ),
-                    SizedBox(height: 10),
-                    LinearProgressIndicator(
-                      value: currentMonthlyExpenses / monthlyBudget.clamp(1, double.infinity), // Current vs Budget
-                      backgroundColor: Colors.grey[200],
-                      valueColor: AlwaysStoppedAnimation<Color>(onTrack ? primaryGreen : primaryRed),
-                      borderRadius: BorderRadius.circular(5),
-                      minHeight: 10,
-                    ),
-                    SizedBox(height: 5),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Current: Rwf ${currentMonthlyExpenses.toStringAsFixed(0)}', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
-                        Text('Budget: Rwf ${monthlyBudget.toStringAsFixed(0)}', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
-                      ],
-                    ),
-                    SizedBox(height: 16),
-                    Row(
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: _loading ? null : _onGetRecommendation,
-                          style: ElevatedButton.styleFrom(backgroundColor: primaryGreen),
-                          icon: _loading
-                              ? SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                              : Icon(Icons.insights, color: Colors.white),
-                          label: Text('Get Recommendation', style: TextStyle(color: Colors.white)),
-                        ),
-                        SizedBox(width: 12),
-                        if (_recommendFlag != null)
-                          Chip(
-                            label: Text('Flag: $_recommendFlag'),
-                            backgroundColor: primaryGreen.withOpacity(0.1),
-                            labelStyle: TextStyle(color: primaryGreen, fontWeight: FontWeight.bold),
-                          ),
-                      ],
-                    ),
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Text(_error!, style: TextStyle(color: Colors.red)),
-                      ),
-                  ],
-                ),
-              ),
+             // Practical Budget Analysis Card
+             Card(
+               elevation: 4,
+               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+               color: Colors.white,
+               child: Padding(
+                 padding: const EdgeInsets.all(20.0),
+                 child: Column(
+                   crossAxisAlignment: CrossAxisAlignment.start,
+                   children: [
+                     Row(
+                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                       children: [
+                         Text(
+                           'This Month\'s Budget Analysis',
+                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey[800]),
+                         ),
+                         Icon(Icons.analytics, color: primaryGreen),
+                       ],
+                     ),
+                     SizedBox(height: 15),
+                     
+                     // Budget vs Actual
+                     Row(
+                       children: [
+                         Expanded(
+                           child: Column(
+                             crossAxisAlignment: CrossAxisAlignment.start,
+                             children: [
+                               Text('Total Income', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                               Text('Rwf ${monthlyBudget.toStringAsFixed(0)}', 
+                                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: primaryGreen)),
+                             ],
+                           ),
+                         ),
+                         Expanded(
+                           child: Column(
+                             crossAxisAlignment: CrossAxisAlignment.start,
+                             children: [
+                               Text('Total Expenses', style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                               Text('Rwf ${currentMonthlyExpenses.toStringAsFixed(0)}', 
+                                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: primaryRed)),
+                             ],
+                           ),
+                         ),
+                       ],
+                     ),
+                     
+                     SizedBox(height: 15),
+                     
+                     // Savings/Deficit
+                     Container(
+                       padding: EdgeInsets.all(12),
+                       decoration: BoxDecoration(
+                         color: (monthlyBudget - currentMonthlyExpenses) >= 0 
+                             ? primaryGreen.withOpacity(0.1) 
+                             : primaryRed.withOpacity(0.1),
+                         borderRadius: BorderRadius.circular(8),
+                       ),
+                       child: Row(
+                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                         children: [
+                           Text('Remaining Budget:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                           Text('Rwf ${(monthlyBudget - currentMonthlyExpenses).toStringAsFixed(0)}', 
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, 
+                                color: (monthlyBudget - currentMonthlyExpenses) >= 0 ? primaryGreen : primaryRed)),
+                         ],
+                       ),
+                     ),
+                     
+                     SizedBox(height: 15),
+                     
+                     // Progress bar
+                     LinearProgressIndicator(
+                       value: monthlyBudget > 0 ? (currentMonthlyExpenses / monthlyBudget).clamp(0.0, 1.0) : 0,
+                       backgroundColor: Colors.grey[200],
+                       valueColor: AlwaysStoppedAnimation<Color>(
+                         currentMonthlyExpenses > monthlyBudget ? primaryRed : primaryGreen
+                       ),
+                       borderRadius: BorderRadius.circular(5),
+                       minHeight: 10,
+                     ),
+                     
+                     SizedBox(height: 5),
+                     Text('${((currentMonthlyExpenses / monthlyBudget) * 100).clamp(0, 100).toStringAsFixed(1)}% of budget used', 
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                     
+                     SizedBox(height: 20),
+                     
+                     // Action buttons
+                     Row(
+                       children: [
+                         Expanded(
+                           child: ElevatedButton.icon(
+                             onPressed: () {
+                               _generateRecommendations();
+                             },
+                             style: ElevatedButton.styleFrom(backgroundColor: primaryGreen),
+                             icon: Icon(Icons.lightbulb, color: Colors.white),
+                             label: Text('Generate Smart Recommendations', style: TextStyle(color: Colors.white)),
+                           ),
+                         ),
+                       ],
+                     ),
+                     
+                     SizedBox(height: 10),
+                     
+                     // Refresh button
+                     Row(
+                       children: [
+                         Expanded(
+                           child: ElevatedButton.icon(
+                             onPressed: () {
+                               _computeAggregates();
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                 SnackBar(content: Text('Budget analysis refreshed!')),
+                               );
+                             },
+                             style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                             icon: Icon(Icons.refresh, color: Colors.white),
+                             label: Text('Refresh Budget Analysis', style: TextStyle(color: Colors.white)),
+                           ),
+                         ),
+                       ],
+                     ),
+                     
+                     // Debug section to show all transactions
+                     SizedBox(height: 15),
+                     ExpansionTile(
+                       title: Text('🔍 Debug: All Transactions (${widget.transactions.length})', 
+                              style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+                       children: [
+                         Container(
+                           height: 200,
+                           child: ListView.builder(
+                             itemCount: widget.transactions.length,
+                             itemBuilder: (context, index) {
+                               final tx = widget.transactions[index];
+                               return ListTile(
+                                 dense: true,
+                                 title: Text('${tx['type']}: ${tx['description']}'),
+                                 subtitle: Text('Amount: ${tx['amount']}, Date: ${tx['date']}, Category: ${tx['category']}'),
+                                 trailing: Text('${tx['amount']}', style: TextStyle(fontWeight: FontWeight.bold)),
+                               );
+                             },
+                           ),
+                         ),
+                       ],
+                     ),
+                   ],
+                 ),
+               ),
+             ),
+            SizedBox(height: 30),
+
+            // Smart Recommendations Section
+            Text(
+              'Smart Recommendations',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.grey[800]),
             ),
+            SizedBox(height: 15),
+            _buildSmartRecommendationCard(),
             SizedBox(height: 30),
 
             // Top Savings Opportunities
@@ -228,74 +320,158 @@ class _ModelRecommendationsScreenState extends State<ModelRecommendationsScreen>
     );
   }
 
-  Future<void> _onGetRecommendation() async {
+  void _generateRecommendations() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Recommendations generated based on your spending patterns!')),
+    );
     setState(() {
-      _loading = true;
-      _error = null;
+      // Trigger UI refresh to show updated recommendations
     });
-
-    try {
-      // Map real values from transactions. Simple example encoding.
-      final double incomeX = monthlyBudget * 0.7;
-      final double incomeY = monthlyBudget * 0.3;
-      final double totalExpenses = currentMonthlyExpenses;
-      final double expenseRatio = monthlyBudget == 0 ? 0 : (currentMonthlyExpenses / monthlyBudget);
-      final int riskFlag = expenseRatio > 0.8 ? 1 : 0;
-
-      // Last expense as the sample item context
-      Map<String, dynamic>? lastExpense;
-      for (final tx in widget.transactions.reversed) {
-        final String type = (tx['type'] ?? '').toString();
-        if (type.startsWith('Expense')) { lastExpense = tx; break; }
-      }
-      final double expenseAmount = lastExpense != null ? (lastExpense['amount'] as num).toDouble() : 0.0;
-      final String category = (lastExpense != null ? (lastExpense['category'] ?? 'Other') : 'Other').toString();
-      final String priorityFlag = _priorityFlagFromType((lastExpense != null ? (lastExpense['type'] ?? '') : '').toString());
-      final String currency = 'Rwf';
-      final double cutoffRate = 0.1;
-
-      final flag = await _api.getRecommendation(
-        incomeX: incomeX,
-        incomeY: incomeY,
-        expenseAmount: expenseAmount,
-        category: category,
-        priorityFlag: priorityFlag,
-        currency: currency,
-        cutoffRate: cutoffRate,
-        totalExpenses: totalExpenses,
-        expenseRatio: expenseRatio,
-        riskFlag: riskFlag,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _recommendFlag = flag;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Recommendation flag: $flag')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-      });
-    } finally {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-      });
-    }
   }
 
-  // Category encoding moved server-side; keeping client simple.
+   Widget _buildSmartRecommendationCard() {
+     // Analyze spending patterns and generate practical recommendations
+     Map<String, double> categorySpending = {};
+     double totalSpending = 0;
+     
+     for (final tx in widget.transactions) {
+       try {
+         final DateTime d = DateTime.parse((tx['date'] ?? '').toString());
+         final DateTime now = DateTime.now();
+         if (d.year == now.year && d.month == now.month) {
+           final String type = (tx['type'] ?? '').toString();
+           if (type.startsWith('Expense')) {
+             final String category = (tx['category'] ?? 'Other').toString();
+             final double amount = (tx['amount'] as num).toDouble();
+             categorySpending[category] = (categorySpending[category] ?? 0) + amount;
+             totalSpending += amount;
+           }
+         }
+       } catch (_) {}
+     }
+     
+     // Find highest spending categories
+     var sortedCategories = categorySpending.entries.toList()
+       ..sort((a, b) => b.value.compareTo(a.value));
+     
+     List<Map<String, dynamic>> recommendations = [];
+     
+     if (sortedCategories.isNotEmpty) {
+       final topCategory = sortedCategories.first;
+       final percentage = totalSpending > 0 ? (topCategory.value / totalSpending) * 100 : 0;
+       
+       if (percentage > 30) {
+         recommendations.add({
+           'title': 'Reduce ${topCategory.key} spending',
+           'description': 'You\'re spending ${percentage.toStringAsFixed(1)}% of your budget on ${topCategory.key}. Consider cutting by 20% to save Rwf ${(topCategory.value * 0.2).toStringAsFixed(0)} this month.',
+           'savings': topCategory.value * 0.2,
+           'icon': Icons.trending_down,
+           'color': primaryRed,
+         });
+       }
+     }
+     
+     // Budget deficit recommendations
+     if (currentMonthlyExpenses > monthlyBudget) {
+       final deficit = currentMonthlyExpenses - monthlyBudget;
+       recommendations.add({
+         'title': 'Budget Alert!',
+         'description': 'You\'re Rwf ${deficit.toStringAsFixed(0)} over budget. Focus on reducing discretionary spending.',
+         'savings': deficit,
+         'icon': Icons.warning,
+         'color': Colors.orange,
+       });
+     }
+     
+     // Savings opportunity
+     if (monthlyBudget > currentMonthlyExpenses && monthlyBudget > 0) {
+       final savings = monthlyBudget - currentMonthlyExpenses;
+       recommendations.add({
+         'title': 'Great job!',
+         'description': 'You have Rwf ${savings.toStringAsFixed(0)} left in your budget. Consider saving this amount.',
+         'savings': savings,
+         'icon': Icons.savings,
+         'color': primaryGreen,
+       });
+     }
+     
+     if (recommendations.isEmpty) {
+       recommendations.add({
+         'title': 'Keep it up!',
+         'description': 'Your spending looks balanced. Continue tracking your expenses.',
+         'savings': 0,
+         'icon': Icons.check_circle,
+         'color': primaryGreen,
+       });
+     }
+     
+     return Card(
+       elevation: 4,
+       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+       color: Colors.white,
+       child: Padding(
+         padding: const EdgeInsets.all(20.0),
+         child: Column(
+           crossAxisAlignment: CrossAxisAlignment.start,
+           children: [
+             Row(
+               children: [
+                 Icon(Icons.psychology, color: primaryGreen, size: 24),
+                 SizedBox(width: 8),
+                 Text(
+                   'AI-Powered Insights',
+                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey[800]),
+                 ),
+               ],
+             ),
+             SizedBox(height: 15),
+             ...recommendations.map((rec) => Padding(
+               padding: const EdgeInsets.only(bottom: 12.0),
+               child: Row(
+                 crossAxisAlignment: CrossAxisAlignment.start,
+                 children: [
+                   Icon(rec['icon'], color: rec['color'], size: 24),
+                   SizedBox(width: 12),
+                   Expanded(
+                     child: Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         Text(
+                           rec['title'],
+                           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey[800]),
+                         ),
+                         SizedBox(height: 4),
+                         Text(
+                           rec['description'],
+                           style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                         ),
+                         if (rec['savings'] > 0) ...[
+                           SizedBox(height: 8),
+                           Container(
+                             padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                             decoration: BoxDecoration(
+                               color: rec['color'].withOpacity(0.1),
+                               borderRadius: BorderRadius.circular(4),
+                             ),
+                             child: Text(
+                               'Potential savings: Rwf ${rec['savings'].toStringAsFixed(0)}',
+                               style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: rec['color']),
+                             ),
+                           ),
+                         ],
+                       ],
+                     ),
+                   ),
+                 ],
+               ),
+             )).toList(),
+           ],
+         ),
+       ),
+     );
+   }
 
-  String _priorityFlagFromType(String type) {
-    if (type == 'Expense_Planned') return 'planned';
-    if (type == 'Expense_Unplanned') return 'unplanned';
-    return 'other';
-  }
-
-  Widget _buildRecommendationCard(BuildContext context, String title, String description, IconData icon, Color iconColor) {
+   Widget _buildRecommendationCard(BuildContext context, String title, String description, IconData icon, Color iconColor) {
     return Card(
       margin: EdgeInsets.only(bottom: 12),
       elevation: 2,
